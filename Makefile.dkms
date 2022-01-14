@@ -1,0 +1,26 @@
+MOD_NAME := isn_sync
+MOD_VERSION := $(shell git describe --always --abbrev=12)
+DKMS_DSTDIR ?= /usr/src/$(MOD_NAME)-$(MOD_VERSION)
+KERNEL_VERSION = $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+
+.PHONY: all install_sources install build uninstall
+
+all: install
+
+install: build
+	dkms install -m $(MOD_NAME) -v $(MOD_VERSION)
+
+build: install_sources
+	dkms build -m $(MOD_NAME) -v $(MOD_VERSION)
+
+install_sources:
+	mkdir -p $(DKMS_DSTDIR)
+	install -o root -g root -m 0755 -d $(DKMS_DSTDIR)
+	cp -t $(DKMS_DSTDIR)/ $(CURDIR)/*
+	sed -i "s/@MOD_NAME@/$(MOD_NAME)/g" "$(DKMS_DSTDIR)/dkms.conf"
+	sed -i "s/@MOD_VERSION@/$(MOD_VERSION)/g" "$(DKMS_DSTDIR)/dkms.conf"
+	dkms add -m $(MOD_NAME) -v $(MOD_VERSION)
+
+uninstall:
+	dkms remove -m $(MOD_NAME) -v $(MOD_VERSION) --all
+	rm -rf $(DKMS_DSTDIR)
