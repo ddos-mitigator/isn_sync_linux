@@ -1,8 +1,8 @@
 obj-m := isn_sync.o
 
-KVER  ?= $(shell uname -r)
-KDIR  ?= /lib/modules/${KVER}/build
-PWD   := $(shell pwd)
+KVER ?= $(shell uname -r)
+KDIR ?= /lib/modules/${KVER}/build
+PWD := $(shell pwd)
 
 default:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules

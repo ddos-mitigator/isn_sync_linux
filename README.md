@@ -1,7 +1,6 @@
 # isn_sync
 
-Linux kernel module to provide access to TCP SYN cookie secrets
-via `/proc/isn_sync`.
+Linux kernel module to provide access to TCP secret keys via `/proc/isn_sync_*`.
 
 ## Kernel Support
 
@@ -31,5 +30,5 @@ CONFIG_FTRACE_MCOUNT_RECORD=y
 
 ## Install via DKMS
 
-This module is a part of the DDoS Mitigator product. To install, follow
+This module is a part of the DDoS MITIGATOR product. To install, follow
 the documentation at https://docs.mitigator.ru/integrate/syncookie/

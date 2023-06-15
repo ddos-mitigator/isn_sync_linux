@@ -1,5 +1,5 @@
 MOD_NAME := isn_sync
-MOD_VERSION := $(shell git describe --always --abbrev=12)
+MOD_VERSION := 22.02
 DKMS_DSTDIR ?= /usr/src/$(MOD_NAME)-$(MOD_VERSION)
 KERNEL_VERSION = $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
