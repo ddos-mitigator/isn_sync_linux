@@ -1,0 +1,312 @@
+#!/usr/bin/env bash
+
+set -eu -o pipefail
+
+print_usage() {
+    ${format_cmd} <<-EOF
+        |Install kernel module and agent service for syncookie synchronization with Mitigator software.
+        |
+        |Usage: $(basename $0) [-option]
+        |
+        |    [without options]     Install module and service
+        |    -u, --uninstall       Uninstall module and service
+        |    -h, --help            Show this help
+        |
+EOF
+}
+
+info() {
+    echo >&2 "$(tput setaf 2; tput smso)INFO:$(tput rmso)" $@ $(tput sgr 0)
+}
+
+error() {
+    echo >&2 "$(tput setaf 1; tput smso)ERROR:$(tput rmso)" $@ $(tput sgr 0)
+}
+
+install_user() {
+    info "Creating '${user}' user..."
+
+    ${format_cmd} <<-EOF > "${sysusers_file}"
+        |u ${user} - "${fullname}" ${home_dir}/empty /opt/mitigator_agent/server
+EOF
+
+    ${format_cmd} <<-EOF > "${tmpfiles_file}"
+        |d ${home_dir}       0700 ${user} ${user}
+        |d ${home_dir}/empty 0755 ${user} ${user}
+EOF
+    ${sysusers_cmd}
+
+    ${format_cmd} <<-EOF > "${sudoers_file}"
+        |${user} ALL=(root) NOPASSWD: ${cat_cmd} /proc/isn_sync_[a-z_]*
+        |${user} ALL=(root) NOPASSWD: ${tee_cmd} /proc/isn_sync_[a-z_]*
+        |${user} ALL=(root) NOPASSWD: ${cat_cmd} /proc/sys/net/ipv4/tcp_[a-z_]*
+        |${user} ALL=(root) NOPASSWD: ${tee_cmd} /proc/sys/net/ipv4/tcp_[a-z_]*
+EOF
+    ${tmpfiles_cmd} --create
+}
+
+uninstall_user() {
+    info "Removing '${user}' user..."
+
+    rm -f ${sudoers_file}
+    rm -f ${tmpfiles_file}
+    rm -f ${sysusers_file}
+
+    ${tmpfiles_cmd} --remove
+    ${sysusers_cmd}
+}
+
+install_module() {
+    info "Building and installing module..."
+
+    cat ./dkms.conf.tmpl \
+        |sed "s/@MOD_NAME@/${module_name}/g" \
+        |sed "s/@MOD_VERSION@/${module_version}/g" \
+        > ./dkms.conf
+
+    ${dkms_cmd} add .
+    ${dkms_cmd} build "${module_name}/${module_version}"
+    ${dkms_cmd} install "${module_name}/${module_version}"
+    echo "${module_name}" > "${loader_file}"
+    rm -f ./dkms.conf
+}
+
+uninstall_module() {
+    info "Uninstalling module..."
+
+    if grep "${module_name}" /proc/modules > /dev/null; then
+        ${modprobe_cmd} -r "${module_name}"
+    fi
+    for mod in $(${dkms_cmd} status ${module_name} \
+            | tr '[:/]' ',' | cut -f1,2 -d ',' | tr -s ', ' '/'); do
+        ${dkms_cmd} remove ${mod} --all
+        local mod_dir=$(echo "${mod}" | tr '/' '-')
+        rm -rf "/usr/src/${mod_dir}"
+    done
+    rm -f "${loader_file}"
+    # Legacy module cleanup.
+    rm -rf "${home_dir}/isn_sync"
+}
+
+install_agent() {
+    info "Installing agent..."
+
+    test -f "${host_key}" || ${keygen_cmd} -t "ed25519" -f "${host_key}" -C "$(hostname)" -N ""
+
+    if [ -f "${config_file}" ]; then
+        mv ${config_file}{,.bak}
+        info "Old config \"${config_file}\" backuped."
+    fi
+
+    ${format_cmd} <<-EOF > "${config_file}"
+        |Port 7100
+        |PidFile none
+        |HostKey ${home_dir}/host.ed25519
+        |AuthorizedKeysFile ${home_dir}/keys
+        |PasswordAuthentication no
+        |PermitOpen none
+        |AllowAgentForwarding no
+        |AllowStreamLocalForwarding no
+        |AllowTCPForwarding no
+        |PrintMotd no
+EOF
+
+    ${format_cmd} <<-EOF > "${home_dir}/server"
+        |#!/bin/bash
+        |
+        |proc_net_secret='/proc/isn_sync_net_secret'
+        |proc_syncookie_secret='/proc/isn_sync_syncookie_secret'
+        |proc_ts_secret='/proc/isn_sync_ts_secret'
+        |proc_tcp_ecn='/proc/sys/net/ipv4/tcp_ecn'
+        |proc_tcp_sack='/proc/sys/net/ipv4/tcp_sack'
+        |proc_tcp_timestamps='/proc/sys/net/ipv4/tcp_timestamps'
+        |proc_tcp_window_scaling='/proc/sys/net/ipv4/tcp_window_scaling'
+        |
+        |in=(\$(echo -n \$2 | tr ';' '\n'))
+        |cmd=\${in[0]}
+        |args=(\${in[@]:1})
+        |case \$cmd in
+        |   get)
+        |       if (( \${#args[@]} != 0 )); then
+        |           echo 'Error: no need args.' 1>&2
+        |           exit 1
+        |       fi
+        |       echo "uname: $(uname)"
+        |       CAT='sudo ${cat_cmd}'
+        |       echo "net_secret: \$(\$CAT \$proc_net_secret)"
+        |       echo "syncookie_secret: \$(\$CAT \$proc_syncookie_secret)"
+        |       echo "ts_secret: \$(\$CAT \$proc_ts_secret)"
+        |       echo "tcp_ecn: \$(\$CAT \$proc_tcp_ecn)"
+        |       echo "tcp_sack: \$(\$CAT \$proc_tcp_sack)"
+        |       echo "tcp_timestamps: \$(\$CAT \$proc_tcp_timestamps)"
+        |       echo "tcp_window_scaling: \$(\$CAT \$proc_tcp_window_scaling)"
+        |       ;;
+        |   set)
+        |       if (( \${#args[@]} != 7 )); then
+        |           echo 'Error: should be 7 args.' 1>&2
+        |           exit 1
+        |       fi
+        |       set -e
+        |       exec 4<&1
+        |       exec 1>/dev/null
+        |       TEE='sudo ${tee_cmd}'
+        |       echo "\${args[0]}" | \$TEE \$proc_net_secret
+        |       echo "\${args[1]}" | \$TEE \$proc_syncookie_secret
+        |       echo "\${args[2]}" | \$TEE \$proc_ts_secret
+        |       echo "\${args[3]}" | \$TEE \$proc_tcp_ecn
+        |       echo "\${args[4]}" | \$TEE \$proc_tcp_sack
+        |       echo "\${args[5]}" | \$TEE \$proc_tcp_timestamps
+        |       echo "\${args[6]}" | \$TEE \$proc_tcp_window_scaling
+        |       exec 1<&4
+        |       set +e
+        |       ;;
+        |     *)
+        |       echo "Error: invalid command \$cmd"
+        |       exit 1
+        |esac
+EOF
+
+    chmod +x "${home_dir}/server"
+    touch "${home_dir}/keys"
+    chown -R ${name}:${name} ${home_dir}
+}
+
+uninstall_agent() {
+    info "Uninstalling agent..."
+
+    rm -f "${home_dir}/server"
+}
+
+install_service() {
+    info "Creating and starting service..."
+
+    ${format_cmd} <<-EOF > "${service_priv_file}"
+        |[Unit]
+        |Description=${fullname} privileged service
+        |After=network.target
+        |
+        |[Service]
+        |Type=oneshot
+        |ExecStart=${modprobe_cmd} isn_sync
+        |ExecStart=${sysctl_cmd} -w net.ipv4.tcp_syncookies=2
+EOF
+
+    ${format_cmd} <<-EOF > "${service_file}"
+        |[Unit]
+        |Description=${fullname}
+        |After=${name}-privileged.service
+        |Requires=${name}-privileged.service
+        |
+        |[Service]
+        |ExecStart=${sshd_cmd} -D -f ${home_dir}/config
+        |User=${name}
+        |Group=${name}
+        |
+        |[Install]
+        |WantedBy=multi-user.target
+EOF
+
+    ${systemctl_cmd} enable --now "${name}.service"
+}
+
+uninstall_service() {
+    info "Stopping and uninstalling service..."
+
+    if ${systemctl_cmd} status "$name.service" &>/dev/null; then
+        ${systemctl_cmd} disable --now "$name.service"
+        rm -f "${service_file}"
+        rm -f "${service_priv_file}"
+    fi
+}
+
+install() {
+    info "Installing ${fullname}:"
+
+    set +e
+    uninstall_service
+    uninstall_agent
+    uninstall_module
+    set -e
+
+    install_user
+    install_module
+    install_agent
+    install_service
+
+    info "Done."
+}
+
+uninstall() {
+    info "Uninstalling ${fullname}:"
+
+    set +e
+    uninstall_service
+    uninstall_agent
+    uninstall_module
+    uninstall_user
+    set -e
+
+    info "Done."
+}
+
+find_command() {
+    local cmd="$1"
+    if ! command -v "${cmd}" > /dev/null; then
+        error "Command '${cmd}' not found. Install all required packages and run again."
+    fi
+    command -v ${cmd}
+}
+
+init() {
+    name="mitigator_agent"
+    user="mitigator_agent"
+    module_name="isn_sync"
+    module_version="23.08"
+    fullname="MITIGATOR Agent"
+    home_dir="/opt/${name}"
+    host_key="${home_dir}/host.ed25519"
+
+    cat_cmd=$(find_command cat)
+    dkms_cmd=$(find_command dkms)
+    tee_cmd=$(find_command tee)
+    keygen_cmd=$(find_command ssh-keygen)
+    modprobe_cmd=$(find_command modprobe)
+    sshd_cmd=$(find_command sshd)
+    sysctl_cmd=$(find_command sysctl)
+    systemctl_cmd=$(find_command systemctl)
+    sysusers_cmd=$(find_command systemd-sysusers)
+    tmpfiles_cmd=$(find_command systemd-tmpfiles)
+
+    config_file="${home_dir}/config"
+    sysusers_file="/usr/lib/sysusers.d/${name}.conf"
+    tmpfiles_file="/usr/lib/tmpfiles.d/${name}.conf"
+    sudoers_file="/etc/sudoers.d/${user}"
+    service_file="/etc/systemd/system/${name}.service"
+    service_priv_file="/etc/systemd/system/${name}-privileged.service"
+    loader_file="/etc/modules-load.d/${name}.conf"
+}
+
+main() {
+    arg=${1:-""}
+    format_cmd="sed s/[^|]*|//"
+
+    if [ "${arg}" == "-h" ] || [ "${arg}" == "--help" ]; then
+        print_usage
+        exit 2
+    fi
+
+    if [ "$(id -u)" -ne 0 ]; then
+        error "Installer must be run as root."
+        exit 1
+    fi
+
+    init
+
+    if [ "${arg}" == "-u" ] || [ "${arg}" == "--uninstall" ]; then
+        uninstall
+    else
+        install
+    fi
+}
+
+main $*

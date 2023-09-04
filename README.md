@@ -6,10 +6,9 @@ Linux kernel module to provide access to TCP secret keys via `/proc/isn_sync_*`.
 
 ### Tested kernels
 
-* 4.19.0-12-amd64 (Debian 10)
-* 5.7.0-0.bpo.2-amd64 (Debian 10)
-* 5.9.0-0.bpo.5-amd64 (Debian 10)
-* 5.10.0-5-amd64 (Debian 11)
+* 4.19.269 (Debian 10)
+* 5.10.191 (Debian 11)
+* 6.1.38 (Debian 12)
 
 ### Unsupported kernels
 
@@ -28,7 +27,14 @@ CONFIG_DYNAMIC_FTRACE_WITH_REGS=y
 CONFIG_FTRACE_MCOUNT_RECORD=y
 ```
 
-## Install via DKMS
+## Installation
 
 This module is a part of the DDoS MITIGATOR product. To install, follow
 the documentation at https://docs.mitigator.ru/integrate/syncookie/
+
+### Required packages
+
+* dkms
+* linux-headers-amd64
+* openssh-server
+* systemd-sysv

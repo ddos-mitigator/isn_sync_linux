@@ -1,4 +1,5 @@
 obj-m := isn_sync.o
+isn_sync-y := common.o filter.o main.o procfs.o syncookie.o
 
 KVER ?= $(shell uname -r)
 KDIR ?= /lib/modules/${KVER}/build
