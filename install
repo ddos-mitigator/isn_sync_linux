@@ -27,12 +27,13 @@ install_user() {
     info "Creating '${user}' user..."
 
     ${format_cmd} <<-EOF > "${sysusers_file}"
-        |u ${user} - "${fullname}" ${home_dir}/empty /opt/mitigator_agent/server
+        |u ${user} - "${fullname}" ${home_dir}/empty ${home_dir}/server
 EOF
 
     ${format_cmd} <<-EOF > "${tmpfiles_file}"
-        |d ${home_dir}       0700 ${user} ${user}
-        |d ${home_dir}/empty 0755 ${user} ${user}
+        |d ${home_dir}         0700 ${user} ${user}
+        |d ${home_dir}/empty   0755 ${user} ${user}
+        |f ${home_dir}/secrets 0600 ${user} ${user}
 EOF
     ${sysusers_cmd}
 
@@ -132,6 +133,7 @@ EOF
         |           exit 1
         |       fi
         |       echo "uname: $(uname)"
+        |       echo "version: $module_version"
         |       CAT='sudo ${cat_cmd}'
         |       echo "net_secret: \$(\$CAT \$proc_net_secret)"
         |       echo "syncookie_secret: \$(\$CAT \$proc_syncookie_secret)"
@@ -157,6 +159,7 @@ EOF
         |       echo "\${args[4]}" | \$TEE \$proc_tcp_sack
         |       echo "\${args[5]}" | \$TEE \$proc_tcp_timestamps
         |       echo "\${args[6]}" | \$TEE \$proc_tcp_window_scaling
+        |       echo "\$2" | $tee_cmd $secrets_file
         |       exec 1<&4
         |       set +e
         |       ;;
@@ -166,8 +169,23 @@ EOF
         |esac
 EOF
 
+    ${format_cmd} <<-EOF > "${home_dir}/set_secrets"
+        |#!/bin/bash
+        |
+        |if [[ ! -s $secrets_file ]]; then
+        |   echo 'No parameters to restore. Waiting for synchronization.'
+        |   exit 0
+        |fi
+        |
+        |set_secrets_cmd=\$(head -n 1 $secrets_file)
+        |${home_dir}/server -c "\$set_secrets_cmd"
+EOF
+
     chmod +x "${home_dir}/server"
     touch "${home_dir}/keys"
+    touch "${secrets_file}"
+    chmod +x "${home_dir}/set_secrets"
+    touch "${home_dir}/set_secrets"
     chown -R ${name}:${name} ${home_dir}
 }
 
@@ -198,6 +216,7 @@ EOF
         |Requires=${name}-privileged.service
         |
         |[Service]
+        |ExecStartPre=- ${home_dir}/set_secrets
         |ExecStart=${sshd_cmd} -D -f ${home_dir}/config
         |User=${name}
         |Group=${name}
@@ -261,7 +280,7 @@ init() {
     name="mitigator_agent"
     user="mitigator_agent"
     module_name="isn_sync"
-    module_version="23.08"
+    module_version="24.10"
     fullname="MITIGATOR Agent"
     home_dir="/opt/${name}"
     host_key="${home_dir}/host.ed25519"
@@ -283,6 +302,7 @@ init() {
     sudoers_file="/etc/sudoers.d/${user}"
     service_file="/etc/systemd/system/${name}.service"
     service_priv_file="/etc/systemd/system/${name}-privileged.service"
+    secrets_file="${home_dir}/secrets"
     loader_file="/etc/modules-load.d/${name}.conf"
 }
 
