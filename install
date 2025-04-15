@@ -134,6 +134,7 @@ EOF
         |       fi
         |       echo "uname: $(uname)"
         |       echo "version: $module_version"
+        |       echo "time: \$(${date_cmd} +%s)"
         |       CAT='sudo ${cat_cmd}'
         |       echo "net_secret: \$(\$CAT \$proc_net_secret)"
         |       echo "syncookie_secret: \$(\$CAT \$proc_syncookie_secret)"
@@ -286,6 +287,7 @@ init() {
     host_key="${home_dir}/host.ed25519"
 
     cat_cmd=$(find_command cat)
+    date_cmd=$(find_command date)
     dkms_cmd=$(find_command dkms)
     tee_cmd=$(find_command tee)
     keygen_cmd=$(find_command ssh-keygen)
