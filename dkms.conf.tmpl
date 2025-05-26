@@ -1,6 +1,6 @@
 PACKAGE_NAME="@MOD_NAME@"
 PACKAGE_VERSION="@MOD_VERSION@"
-MAKE[0]="make KVER='${kernelver}' KDIR='${kernel_source_dir}'"
+MAKE[0]="make KVER='${kernelver}' KDIR='${kernel_source_dir}' MOD_VERSION=@MOD_VERSION@"
 BUILT_MODULE_NAME[0]="@MOD_NAME@"
 DEST_MODULE_LOCATION[0]="/kernel/net/@MOD_NAME@/"
 AUTOINSTALL=yes

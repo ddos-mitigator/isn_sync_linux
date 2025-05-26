@@ -1,6 +1,9 @@
 obj-m := isn_sync.o
 isn_sync-y := common.o filter.o main.o procfs.o syncookie.o
 
+MOD_VERSION ?= latest
+ccflags-y := -DMOD_VERSION='"$(MOD_VERSION)"'
+
 KVER ?= $(shell uname -r)
 KDIR ?= /lib/modules/${KVER}/build
 PWD := $(shell pwd)

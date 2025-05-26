@@ -97,7 +97,7 @@ static int _var_show(const void *var_ptr, size_t var_size,
     \
     static struct proc_dir_entry *isn_procfs_entry_##__name; \
     \
-    void isn_procfs_exit_##__name(void) \
+    static void isn_procfs_exit_##__name(void) \
     { \
         if (isn_procfs_entry_##__name) { \
             remove_proc_entry(_PROC_PREFIX #__name, 0); \
@@ -105,7 +105,7 @@ static int _var_show(const void *var_ptr, size_t var_size,
         } \
     } \
     \
-    bool isn_procfs_init_##__name(void) \
+    static bool isn_procfs_init_##__name(void) \
     { \
         static const char *entry_name = _PROC_PREFIX #__name; \
         \

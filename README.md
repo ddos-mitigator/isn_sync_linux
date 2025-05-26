@@ -1,18 +1,12 @@
 # isn_sync
 
-Linux kernel module to provide access to TCP secret keys via `/proc/isn_sync_*`.
+Linux kernel module and agent for TCP protection with ISN synchronization.
 
 ## Kernel Support
 
-### Tested kernels
+### Supported kernels
 
-* 4.19.269 (Debian 10)
-* 5.10.191 (Debian 11)
-* 6.1.38 (Debian 12)
-
-### Unsupported kernels
-
-* < 4.13 (cookie algorithm changed)
+* 4.13+
 
 ### Custom kernels
 
@@ -29,7 +23,7 @@ CONFIG_FTRACE_MCOUNT_RECORD=y
 
 ## Installation
 
-This module is a part of the DDoS MITIGATOR product. To install, follow
+This module is a part of the MITIGATOR product. To install, follow
 the documentation at https://docs.mitigator.ru/integrate/syncookie/
 
 ### Required packages
