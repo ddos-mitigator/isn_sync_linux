@@ -77,7 +77,10 @@ static inline __u32 isn_check_tcp_syn_cookie(__u32 cookie, __be32 saddr, __be32 
     return (cookie - ch2) & ISN_COOKIEMASK;
 }
 
-int isn___cookie_v4_check(const struct iphdr *iph, const struct tcphdr *th, u32 cookie)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
+
+static int isn___cookie_v4_check(const struct iphdr *iph, const struct tcphdr *th,
+        u32 cookie)
 {
     __u32 seq = ntohl(th->seq) - 1;
     __u32 mssind = isn_check_tcp_syn_cookie(cookie,
@@ -86,6 +89,25 @@ int isn___cookie_v4_check(const struct iphdr *iph, const struct tcphdr *th, u32 
             seq);
     return (mssind < ARRAY_SIZE(msstab)) ? msstab[mssind] : 0;
 }
+
+#else
+
+/*
+ * Kernel v6.8 changes:
+ * `tcp: Don't pass cookie to __cookie_v[46]_check().` (7577bc8249c3)
+*/
+static int isn___cookie_v4_check(const struct iphdr *iph, const struct tcphdr *th)
+{
+    __u32 cookie = ntohl(th->ack_seq) - 1;
+    __u32 seq = ntohl(th->seq) - 1;
+    __u32 mssind = isn_check_tcp_syn_cookie(cookie,
+            iph->saddr, iph->daddr,
+            th->source, th->dest,
+            seq);
+    return (mssind < ARRAY_SIZE(msstab)) ? msstab[mssind] : 0;
+}
+
+#endif
 
 static inline __u32 isn_secure_tcp_syn_cookie(__be32 saddr, __be32 daddr,
         __be16 sport, __be16 dport, __u32 sseq, __u32 data)
@@ -96,8 +118,8 @@ static inline __u32 isn_secure_tcp_syn_cookie(__be32 saddr, __be32 daddr,
     return (ch1 + sseq + (count << ISN_COOKIEBITS) + ((ch2 + data) & ISN_COOKIEMASK));
 }
 
-u32 isn___cookie_v4_init_sequence(const struct iphdr* iph, const struct tcphdr* th,
-        u16* mssp)
+static u32 isn___cookie_v4_init_sequence(const struct iphdr* iph,
+        const struct tcphdr* th, u16* mssp)
 {
     int mssind;
     const __u16 mss = *mssp;
@@ -112,7 +134,7 @@ u32 isn___cookie_v4_init_sequence(const struct iphdr* iph, const struct tcphdr* 
             ntohl(th->seq), mssind);
 }
 
-struct sock *isn_cookie_v4_check(struct sock *sk, struct sk_buff *skb)
+static struct sock *isn_cookie_v4_check(struct sock *sk, struct sk_buff *skb)
 {
     if (sock_net(sk)->ipv4.sysctl_tcp_syncookies == 2)
         tcp_synq_overflow(sk);
@@ -121,17 +143,36 @@ struct sock *isn_cookie_v4_check(struct sock *sk, struct sk_buff *skb)
     return NULL;
 }
 
-u32 isn_secure_tcp_ts_off(const struct net *net, __be32 saddr, __be32 daddr)
+static u32 isn_time_diff(void)
 {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 5, 0)
-    // Same as tcp_ns_to_ts().
     u32 now = div_u64(ktime_get_real_ns(), NSEC_PER_SEC / TCP_TS_HZ);
-#else
+    return (now - tcp_time_stamp_raw() + ISN_TIME_DRIFT_MS) & ~ISN_TSMASK;
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 7, 0)
     u32 now = tcp_ns_to_ts(ktime_get_real_ns());
+    return (now - tcp_time_stamp_raw() + ISN_TIME_DRIFT_MS) & ~ISN_TSMASK;
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0)
+    /*
+    * Kernel v6.7 changes:
+    * `tcp: replace tcp_time_stamp_raw()` (16cf6477741b)
+    * `tcp: move tcp_ns_to_ts() to net/ipv4/syncookies.c` (003e07a1e48e)
+    */
+    u32 now = div_u64(ktime_get_real_ns(), NSEC_PER_SEC / TCP_TS_HZ);
+    return (now - tcp_clock_ts(false) + ISN_TIME_DRIFT_MS) & ~ISN_TSMASK;
+#else
+    /*
+    * Kernel v6.9 changes:
+    * `tcp: Move tcp_ns_to_ts() to tcp.h` (b18afb6f4229)
+    */
+    u32 now = tcp_ns_to_ts(false, ktime_get_real_ns());
+    return (now - tcp_ns_to_ts(false, tcp_clock_ns()) + ISN_TIME_DRIFT_MS) & ~ISN_TSMASK;
 #endif
-    u32 diff = (now - tcp_time_stamp_raw() + ISN_TIME_DRIFT_MS) & ~ISN_TSMASK;
+}
+
+static u32 isn_secure_tcp_ts_off(const struct net *net, __be32 saddr, __be32 daddr)
+{
     if (secure_tcp_ts_off_orig)
-        return secure_tcp_ts_off_orig(net, saddr, daddr) + diff;
+        return secure_tcp_ts_off_orig(net, saddr, daddr) + isn_time_diff();
     return 0;
 }
 

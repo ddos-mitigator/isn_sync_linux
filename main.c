@@ -12,7 +12,7 @@
 
 void isn_deinit(void);
 
-int __init isn_init(void)
+static int __init isn_init(void)
 {
     bool is_ok = isn_syncookie_init() && isn_filter_init() && isn_procfs_init();
     if (!is_ok) {
@@ -29,7 +29,7 @@ void isn_deinit(void)
     isn_syncookie_exit();
 }
 
-void __exit isn_exit(void)
+static void __exit isn_exit(void)
 {
     isn_deinit();
 }

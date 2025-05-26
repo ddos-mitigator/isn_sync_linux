@@ -4,11 +4,14 @@ Linux kernel module to provide access to TCP secret keys via `/proc/isn_sync_*`.
 
 ## Kernel Support
 
-### Tested kernels
+### Supported kernels
 
-* 4.19.269 (Debian 10)
-* 5.10.191 (Debian 11)
-* 6.1.38 (Debian 12)
+* 4.19 (Debian 10)
+* 5.10 (Debian 11)
+* 6.1 (Debian 12)
+* 6.7 (Debian 12)
+* 6.8 (Debian 12)
+* 6.9 (Debian 12)
 
 ### Unsupported kernels
 
