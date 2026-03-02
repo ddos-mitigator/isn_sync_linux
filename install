@@ -117,6 +117,7 @@ EOF
         |
         |proc_net_secret='/proc/isn_sync_net_secret'
         |proc_syncookie_secret='/proc/isn_sync_syncookie_secret'
+        |proc_syncookie6_secret='/proc/isn_sync_syncookie6_secret'
         |proc_ts_secret='/proc/isn_sync_ts_secret'
         |proc_tcp_ecn='/proc/sys/net/ipv4/tcp_ecn'
         |proc_tcp_sack='/proc/sys/net/ipv4/tcp_sack'
@@ -138,6 +139,7 @@ EOF
         |       CAT='sudo ${cat_cmd}'
         |       echo "net_secret: \$(\$CAT \$proc_net_secret)"
         |       echo "syncookie_secret: \$(\$CAT \$proc_syncookie_secret)"
+        |       echo "syncookie6_secret: \$(\$CAT \$proc_syncookie6_secret)"
         |       echo "ts_secret: \$(\$CAT \$proc_ts_secret)"
         |       echo "tcp_ecn: \$(\$CAT \$proc_tcp_ecn)"
         |       echo "tcp_sack: \$(\$CAT \$proc_tcp_sack)"
@@ -145,8 +147,8 @@ EOF
         |       echo "tcp_window_scaling: \$(\$CAT \$proc_tcp_window_scaling)"
         |       ;;
         |   set)
-        |       if (( \${#args[@]} != 7 )); then
-        |           echo 'Error: should be 7 args.' 1>&2
+        |       if (( \${#args[@]} != 8 )); then
+        |           echo 'Error: should be 8 args.' 1>&2
         |           exit 1
         |       fi
         |       set -e
@@ -155,11 +157,12 @@ EOF
         |       TEE='sudo ${tee_cmd}'
         |       echo "\${args[0]}" | \$TEE \$proc_net_secret
         |       echo "\${args[1]}" | \$TEE \$proc_syncookie_secret
-        |       echo "\${args[2]}" | \$TEE \$proc_ts_secret
-        |       echo "\${args[3]}" | \$TEE \$proc_tcp_ecn
-        |       echo "\${args[4]}" | \$TEE \$proc_tcp_sack
-        |       echo "\${args[5]}" | \$TEE \$proc_tcp_timestamps
-        |       echo "\${args[6]}" | \$TEE \$proc_tcp_window_scaling
+        |       echo "\${args[2]}" | \$TEE \$proc_syncookie6_secret
+        |       echo "\${args[3]}" | \$TEE \$proc_ts_secret
+        |       echo "\${args[4]}" | \$TEE \$proc_tcp_ecn
+        |       echo "\${args[5]}" | \$TEE \$proc_tcp_sack
+        |       echo "\${args[6]}" | \$TEE \$proc_tcp_timestamps
+        |       echo "\${args[7]}" | \$TEE \$proc_tcp_window_scaling
         |       echo "\$2" | $tee_cmd $secrets_file
         |       exec 1<&4
         |       set +e

@@ -121,18 +121,21 @@ static int _var_show(const void *var_ptr, size_t var_size,
 
 _DEFINE_PROC_VAR(net_secret)
 _DEFINE_PROC_VAR(syncookie_secret)
+_DEFINE_PROC_VAR(syncookie6_secret)
 _DEFINE_PROC_VAR(ts_secret)
 
 bool isn_procfs_init(void)
 {
     return isn_procfs_init_net_secret() &&
             isn_procfs_init_syncookie_secret() &&
+            isn_procfs_init_syncookie6_secret() &&
             isn_procfs_init_ts_secret();
 }
 
 void isn_procfs_exit(void)
 {
     isn_procfs_exit_ts_secret();
+    isn_procfs_exit_syncookie6_secret();
     isn_procfs_exit_syncookie_secret();
     isn_procfs_exit_net_secret();
 }

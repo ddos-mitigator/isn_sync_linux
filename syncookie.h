@@ -8,6 +8,9 @@ extern net_secret_t net_secret_link;
 typedef siphash_key_t (*syncookie_secret_t)[2];
 extern syncookie_secret_t syncookie_secret_link;
 
+typedef siphash_key_t (*syncookie6_secret_t)[2];
+extern syncookie6_secret_t syncookie6_secret_link;
+
 typedef siphash_key_t *ts_secret_t;
 extern ts_secret_t ts_secret_link;
 

@@ -25,7 +25,7 @@ static __always_inline struct pt_regs *ftrace_get_regs(struct ftrace_regs *fregs
 #define ISN_DO_FTRACE_ON_INIT(__is_ok, __func) \
     if (__is_ok) { \
         __is_ok = isn_register_ftrace(&isn_##__func##_ops, __func##_link); \
-        if (!is_ok) \
+        if (!__is_ok) \
             pr_err(KBUILD_MODNAME ": no access to " #__func "()!\n"); \
         else \
             __func##_orig = isn_find_func_beginning((void*) __func##_link); \
