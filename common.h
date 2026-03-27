@@ -28,7 +28,7 @@ static __always_inline struct pt_regs *ftrace_get_regs(struct ftrace_regs *fregs
         if (!is_ok) \
             pr_err(KBUILD_MODNAME ": no access to " #__func "()!\n"); \
         else \
-            __func##_orig = (void*)((unsigned long) __func##_link + MCOUNT_INSN_SIZE); \
+            __func##_orig = isn_find_func_beginning((void*) __func##_link); \
     }
 
 #define ISN_UNDO_FTRACE_ON_EXIT(__func) \
@@ -52,5 +52,6 @@ static __always_inline struct pt_regs *ftrace_get_regs(struct ftrace_regs *fregs
     }
 
 unsigned long isn_lookup_name(const char *name);
+void* isn_find_func_beginning(unsigned char *func_ptr);
 bool isn_register_ftrace(struct ftrace_ops *fops, void *ptr);
 void isn_unregister_ftrace(struct ftrace_ops *fops, void *ptr);

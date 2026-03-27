@@ -55,6 +55,23 @@ unsigned long isn_lookup_name(const char *name)
 #endif
 }
 
+#define CALL_OPCODE 0xe8
+#define CALL_OPCODE_MAX_POS 16
+
+void* isn_find_func_beginning(unsigned char *func_ptr)
+{
+    unsigned char offset = 0;
+
+    while (offset < CALL_OPCODE_MAX_POS) {
+        if (func_ptr[offset] == CALL_OPCODE) {
+            return func_ptr + offset + MCOUNT_INSN_SIZE;
+        }
+        offset++;
+    }
+
+    return func_ptr + MCOUNT_INSN_SIZE;
+}
+
 bool isn_register_ftrace(struct ftrace_ops *fops, void *ptr)
 {
     int err;
