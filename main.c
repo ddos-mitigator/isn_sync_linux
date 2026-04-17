@@ -3,6 +3,7 @@
 
 #include "common.h"
 #include "filter.h"
+#include "fixed_dst.h"
 #include "procfs.h"
 #include "syncookie.h"
 
@@ -14,7 +15,8 @@ void isn_deinit(void);
 
 static int __init isn_init(void)
 {
-    bool is_ok = isn_syncookie_init() && isn_filter_init() && isn_procfs_init();
+    bool is_ok = isn_syncookie_init() && isn_filter_init() &&
+            isn_procfs_init() && isn_fixed_dst_init();
     if (!is_ok) {
         isn_deinit();
         return -EIO;
@@ -24,6 +26,7 @@ static int __init isn_init(void)
 
 void isn_deinit(void)
 {
+    isn_fixed_dst_exit();
     isn_procfs_exit();
     isn_filter_exit();
     isn_syncookie_exit();

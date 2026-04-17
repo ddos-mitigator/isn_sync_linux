@@ -13,7 +13,6 @@
 #include "syncookie.h"
 
 #define _BUFFER_SIZE 512
-#define _PROC_PREFIX "isn_sync_"
 #define _VAR(__name) __name##_link
 
 #define _DEFINE_VAR_WRITE(__name) \
@@ -68,65 +67,16 @@ static int _var_show(const void *var_ptr, size_t var_size,
     return 0;
 }
 
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(5, 6, 0)
-#define _DEFINE_PROC_VAR_OPS(__name) \
-    _DEFINE_VAR_WRITE(__name) \
-    _DEFINE_VAR_READ(__name) \
-    \
-    static const struct file_operations __name##_proc_ops = { \
-        .open    = __name##_open, \
-        .read    = seq_read, \
-        .write   = __name##_write, \
-        .llseek  = seq_lseek, \
-        .release = single_release, \
-    }
-#else
-#define _DEFINE_PROC_VAR_OPS(__name) \
-    _DEFINE_VAR_WRITE(__name) \
-    _DEFINE_VAR_READ(__name) \
-    \
-    static const struct proc_ops __name##_proc_ops = { \
-        .proc_open    = __name##_open, \
-        .proc_read    = seq_read, \
-        .proc_write   = __name##_write, \
-        .proc_lseek   = seq_lseek, \
-        .proc_release = single_release, \
-    }
-#endif
-
-#define _DEFINE_PROC_VAR(__name) \
+#define _DEFINE_PROC_VAR_SECRET(__name) \
     _Static_assert((2 * sizeof(*_VAR(__name)) + 1) <= _BUFFER_SIZE, ""); \
-    \
-    _DEFINE_PROC_VAR_OPS(__name); \
-    \
-    static struct proc_dir_entry *isn_procfs_entry_##__name; \
-    \
-    static void isn_procfs_exit_##__name(void) \
-    { \
-        if (isn_procfs_entry_##__name) { \
-            remove_proc_entry(_PROC_PREFIX #__name, 0); \
-            isn_procfs_entry_##__name = NULL; \
-        } \
-    } \
-    \
-    static bool isn_procfs_init_##__name(void) \
-    { \
-        static const char *entry_name = _PROC_PREFIX #__name; \
-        \
-        isn_procfs_entry_##__name = proc_create( \
-                entry_name, 044, NULL, &__name##_proc_ops); \
-        if (!isn_procfs_entry_##__name) { \
-            pr_err(KBUILD_MODNAME ": can't create proc entry=%s", entry_name); \
-            return false; \
-        } \
-        \
-        return true; \
-    } \
+    _DEFINE_VAR_WRITE(__name) \
+    _DEFINE_VAR_READ(__name) \
+    _DEFINE_PROC_VAR(__name) \
 
-_DEFINE_PROC_VAR(net_secret)
-_DEFINE_PROC_VAR(syncookie_secret)
-_DEFINE_PROC_VAR(syncookie6_secret)
-_DEFINE_PROC_VAR(ts_secret)
+_DEFINE_PROC_VAR_SECRET(net_secret)
+_DEFINE_PROC_VAR_SECRET(syncookie_secret)
+_DEFINE_PROC_VAR_SECRET(syncookie6_secret)
+_DEFINE_PROC_VAR_SECRET(ts_secret)
 
 bool isn_procfs_init(void)
 {

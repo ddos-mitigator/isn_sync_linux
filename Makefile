@@ -1,5 +1,5 @@
 obj-m := isn_sync.o
-isn_sync-y := common.o filter.o main.o procfs.o syncookie.o
+isn_sync-y := common.o filter.o fixed_dst.o main.o procfs.o syncookie.o
 
 MOD_VERSION ?= latest
 ccflags-y := -DMOD_VERSION='"$(MOD_VERSION)"'
@@ -14,8 +14,8 @@ default:
 install:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules_install
 
-clean: 
+clean:
 	@rm -f *.o .*.o .*.cmd .*.*.cmd .*.flags *.mod.c *.order
 
-distclean: clean 
+distclean: clean
 	@rm -f *.ko *.mod *.symvers

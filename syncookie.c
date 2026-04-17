@@ -5,6 +5,7 @@
 #include <net/secure_seq.h>
 
 #include "common.h"
+#include "fixed_dst.h"
 #include "syncookie.h"
 
 #define ISN_TIME_DRIFT_MS 5000
@@ -36,6 +37,10 @@ typedef u32 (*secure_tcp_ts_off_t)(const struct net *net, __be32 saddr, __be32 d
 static secure_tcp_ts_off_t secure_tcp_ts_off_link;
 static secure_tcp_ts_off_t secure_tcp_ts_off_orig;
 
+typedef u32 (*secure_tcp_seq_t)(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport);
+static secure_tcp_seq_t secure_tcp_seq_link;
+static secure_tcp_seq_t secure_tcp_seq_orig;
+
 #if IS_ENABLED(CONFIG_IPV6)
 
 typedef int (*__cookie_v6_check_t)
@@ -56,6 +61,11 @@ typedef u32 (*secure_tcpv6_ts_off_t)
         (const struct net *net, const __be32 *saddr, const __be32 *daddr);
 static secure_tcpv6_ts_off_t secure_tcpv6_ts_off_link;
 static secure_tcpv6_ts_off_t secure_tcpv6_ts_off_orig;
+
+typedef u32 (*secure_tcpv6_seq_t)
+        (const __be32 *saddr, const __be32 *daddr, __be16 sport, __be16 dport);
+static secure_tcpv6_seq_t secure_tcpv6_seq_link;
+static secure_tcpv6_seq_t secure_tcpv6_seq_orig;
 
 #endif
 
@@ -81,8 +91,8 @@ static inline u32 isn_cookie_hash(__be32 saddr, __be32 daddr, __be16 sport, __be
         u32 count, int c)
 {
     return siphash_4u32(
-            (__force u32)saddr, (__force u32)daddr,
-            (__force u32)sport << 16 | (__force u32)dport,
+            (__force u32)saddr, (__force u32) get_dst_ip(daddr),
+            (__force u32)sport << 16 | (__force u32) get_dst_port(dport),
             count, &(*syncookie_secret_link)[c]);
 }
 
@@ -196,7 +206,14 @@ static u32 isn_time_diff(void)
 static u32 isn_secure_tcp_ts_off(const struct net *net, __be32 saddr, __be32 daddr)
 {
     if (secure_tcp_ts_off_orig)
-        return secure_tcp_ts_off_orig(net, saddr, daddr) + isn_time_diff();
+        return secure_tcp_ts_off_orig(net, get_dst_ip(saddr), daddr) + isn_time_diff();
+    return 0;
+}
+
+static u32 isn_secure_tcp_seq(__be32 saddr, __be32 daddr, __be16 sport, __be16 dport)
+{
+    if (secure_tcp_seq_orig)
+        return secure_tcp_seq_orig(get_dst_ip(saddr), daddr, get_dst_port(sport), dport);
     return 0;
 }
 
@@ -221,10 +238,10 @@ static inline u32 isn_cookie_hash_v6(
         __be16 dport;
     } __aligned(SIPHASH_ALIGNMENT) combined = {
             .saddr = *saddr,
-            .daddr = *daddr,
+            .daddr = *get_dst_ip_v6(daddr),
             .count = count,
             .sport = sport,
-            .dport = dport
+            .dport = get_dst_port_v6(dport)
     };
 
     _Static_assert(offsetofend(typeof(combined), dport) == 40);
@@ -283,7 +300,7 @@ static int isn___cookie_v6_check(const struct ipv6hdr *iph,
             &iph->saddr, &iph->daddr,
             th->source, th->dest,
             seq);
-    return (mssind < ARRAY_SIZE(msstab)) ? msstab[mssind] : 0;
+    return (mssind < ARRAY_SIZE(msstab_v6)) ? msstab_v6[mssind] : 0;
 }
 
 #endif
@@ -314,8 +331,21 @@ static struct sock *isn_cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 static u32 isn_secure_tcpv6_ts_off(const struct net *net,
         const __be32 *saddr, const __be32 *daddr)
 {
-    if (secure_tcpv6_ts_off_orig)
+    if (secure_tcpv6_ts_off_orig) {
+        saddr = (const __be32 *)get_dst_ip_v6((const struct in6_addr *)saddr);
         return secure_tcpv6_ts_off_orig(net, saddr, daddr) + isn_time_diff();
+    }
+    return 0;
+}
+
+static u32 isn_secure_tcpv6_seq(const __be32 *saddr, const __be32 *daddr,
+        __be16 sport, __be16 dport)
+{
+    if (secure_tcpv6_seq_orig) {
+        saddr = (const __be32 *)get_dst_ip_v6((const struct in6_addr *)saddr);
+        sport = get_dst_port_v6(sport);
+        return secure_tcpv6_seq_orig(saddr, daddr, sport, dport);
+    }
     return 0;
 }
 
@@ -329,12 +359,14 @@ static bool isn_syncookie_init_lookup(void)
     ISN_DO_LOOKUP_ON_INIT(is_ok, __cookie_v4_init_sequence)
     ISN_DO_LOOKUP_ON_INIT(is_ok, cookie_v4_check)
     ISN_DO_LOOKUP_ON_INIT(is_ok, secure_tcp_ts_off)
+    ISN_DO_LOOKUP_ON_INIT(is_ok, secure_tcp_seq)
 
 #if IS_ENABLED(CONFIG_IPV6)
     ISN_DO_LOOKUP_ON_INIT(is_ok, __cookie_v6_check)
     ISN_DO_LOOKUP_ON_INIT(is_ok, __cookie_v6_init_sequence)
     ISN_DO_LOOKUP_ON_INIT(is_ok, cookie_v6_check)
     ISN_DO_LOOKUP_ON_INIT(is_ok, secure_tcpv6_ts_off)
+    ISN_DO_LOOKUP_ON_INIT(is_ok, secure_tcpv6_seq)
 #endif
 
     ISN_DO_LOOKUP_ON_INIT(is_ok, net_secret)
@@ -353,12 +385,14 @@ static void isn_syncookie_exit_lookup(void)
     ISN_UNDO_LOOKUP_ON_EXIT(net_secret)
 
 #if IS_ENABLED(CONFIG_IPV6)
+    ISN_UNDO_LOOKUP_ON_EXIT(secure_tcpv6_seq)
     ISN_UNDO_LOOKUP_ON_EXIT(secure_tcpv6_ts_off)
     ISN_UNDO_LOOKUP_ON_EXIT(cookie_v6_check)
     ISN_UNDO_LOOKUP_ON_EXIT(__cookie_v6_init_sequence)
     ISN_UNDO_LOOKUP_ON_EXIT(__cookie_v6_check)
 #endif
 
+    ISN_UNDO_LOOKUP_ON_EXIT(secure_tcp_seq)
     ISN_UNDO_LOOKUP_ON_EXIT(secure_tcp_ts_off)
     ISN_UNDO_LOOKUP_ON_EXIT(cookie_v4_check)
     ISN_UNDO_LOOKUP_ON_EXIT(__cookie_v4_init_sequence)
@@ -369,12 +403,14 @@ ISN_DEFINE_FTRACE_OPS(isn___cookie_v4_check_ops, isn___cookie_v4_check);
 ISN_DEFINE_FTRACE_OPS(isn___cookie_v4_init_sequence_ops, isn___cookie_v4_init_sequence);
 ISN_DEFINE_FTRACE_OPS(isn_cookie_v4_check_ops, isn_cookie_v4_check);
 ISN_DEFINE_FTRACE_OPS(isn_secure_tcp_ts_off_ops, isn_secure_tcp_ts_off);
+ISN_DEFINE_FTRACE_OPS(isn_secure_tcp_seq_ops, isn_secure_tcp_seq);
 
 #if IS_ENABLED(CONFIG_IPV6)
 ISN_DEFINE_FTRACE_OPS(isn___cookie_v6_check_ops, isn___cookie_v6_check);
 ISN_DEFINE_FTRACE_OPS(isn___cookie_v6_init_sequence_ops, isn___cookie_v6_init_sequence);
 ISN_DEFINE_FTRACE_OPS(isn_cookie_v6_check_ops, isn_cookie_v6_check);
 ISN_DEFINE_FTRACE_OPS(isn_secure_tcpv6_ts_off_ops, isn_secure_tcpv6_ts_off);
+ISN_DEFINE_FTRACE_OPS(isn_secure_tcpv6_seq_ops, isn_secure_tcpv6_seq);
 #endif
 
 static bool isn_syncookie_init_ftrace(void)
@@ -385,12 +421,14 @@ static bool isn_syncookie_init_ftrace(void)
     ISN_DO_FTRACE_ON_INIT(is_ok, __cookie_v4_init_sequence);
     ISN_DO_FTRACE_ON_INIT(is_ok, cookie_v4_check);
     ISN_DO_FTRACE_ON_INIT(is_ok, secure_tcp_ts_off);
+    ISN_DO_FTRACE_ON_INIT(is_ok, secure_tcp_seq);
 
 #if IS_ENABLED(CONFIG_IPV6)
     ISN_DO_FTRACE_ON_INIT(is_ok, __cookie_v6_check);
     ISN_DO_FTRACE_ON_INIT(is_ok, __cookie_v6_init_sequence);
     ISN_DO_FTRACE_ON_INIT(is_ok, cookie_v6_check);
     ISN_DO_FTRACE_ON_INIT(is_ok, secure_tcpv6_ts_off);
+    ISN_DO_FTRACE_ON_INIT(is_ok, secure_tcpv6_seq);
 #endif
 
     return is_ok;
@@ -399,12 +437,14 @@ static bool isn_syncookie_init_ftrace(void)
 static void isn_syncookie_exit_ftrace(void)
 {
 #if IS_ENABLED(CONFIG_IPV6)
+    ISN_UNDO_FTRACE_ON_EXIT(secure_tcpv6_seq)
     ISN_UNDO_FTRACE_ON_EXIT(secure_tcpv6_ts_off)
     ISN_UNDO_FTRACE_ON_EXIT(cookie_v6_check)
     ISN_UNDO_FTRACE_ON_EXIT(__cookie_v6_init_sequence)
     ISN_UNDO_FTRACE_ON_EXIT(__cookie_v6_check)
 #endif
 
+    ISN_UNDO_FTRACE_ON_EXIT(secure_tcp_seq)
     ISN_UNDO_FTRACE_ON_EXIT(secure_tcp_ts_off)
     ISN_UNDO_FTRACE_ON_EXIT(cookie_v4_check)
     ISN_UNDO_FTRACE_ON_EXIT(__cookie_v4_init_sequence)
@@ -425,13 +465,14 @@ static bool isn_init_secrets(void)
     __cookie_v6_init_sequence(&ih6, &th, &mss);
 
 /*
-* Kernel v6.15 changes:
-* `tcp: use EXPORT_IPV6_MOD[_GPL]()` (6dc4c2526f6d)
-* (`secure_tcpv6_ts_off` is not exported)
-*/
+ * Kernel v6.15 changes:
+ * `tcp: use EXPORT_IPV6_MOD[_GPL]()` (6dc4c2526f6d)
+ * (`secure_tcpv6_ts_off` is not exported)
+ */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 15, 0)
-    // Force init ts_secret (secure_tcp_ts_off() - is not exported).
     struct in6_addr i6_addr = {};
+
+    // Force init ts_secret (secure_tcp_ts_off() - is not exported).
     secure_tcpv6_ts_off(&init_net, (const __be32 *)&i6_addr, (const __be32 *)&i6_addr);
 #endif
 
