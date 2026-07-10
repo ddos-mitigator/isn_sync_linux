@@ -4,6 +4,10 @@
 #include <linux/seq_file.h>
 #include <linux/version.h>
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0)
+#include <linux/hex.h>
+#endif
+
 #include "common.h"
 #include "procfs.h"
 #include "syncookie.h"

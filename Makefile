@@ -15,7 +15,7 @@ install:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules_install
 
 clean: 
-	@rm -f *.o .*.cmd .*.*.cmd .*.flags *.mod.c *.order
+	@rm -f *.o .*.o .*.cmd .*.*.cmd .*.flags *.mod.c *.order
 
 distclean: clean 
 	@rm -f *.ko *.mod *.symvers
